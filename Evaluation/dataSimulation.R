@@ -7,80 +7,78 @@ source("glmrobBy_UPDATE.R")
 source("additionalFunctions.R")
 
 library(pROC)
-library(xtable)
 library(robustbase)
 library(glmnet)
-library(tidyverse)
-library(dplyr)
-library(qwraps2)   ## masks auc
 
 #################################################################################################################################
 
-simulate_results <- function(p, gamma, outmethod = "mcd") {
+simulate_results <- function(p, gamma) {
   n = 5000
-  set.seed(24)
-  numrep = 100
+  set.seed(243)
+  numrep = 500
   
+  ##############################
   ## define tables
-  models <- c("glm", "glm cost-sensitive", "BY", "BY cost-sensitive", "WBY", "WBY cost-sensitive") 
-  caseI <- data.frame(matrix(ncol=24, nrow = numrep))
-  colnames(caseI) <- c(paste(models, 20), paste(models, 10), paste(models, 5), paste(models, 1))
-
-  caseII <- caseI
-  caseIII <- caseI
-  caseMiss <- caseI
-
+  models <- c("glm", "glm cost-sensitive", "BY", "BY cost-sensitive", "WBY (mcd)", "WBY cost-sensitive (mcd)", "WBY (pcdist)", "WBY cost-sensitive (pcdist)") 
+  
+  betasI <- data.frame(matrix(ncol=32, nrow = numrep*(p+1)))
+  colnames(betasI) <- c(paste(models, 20), paste(models, 10), paste(models, 5), paste(models, 1))
+  betasII <- betasI
+  betasIII <- betasI
+  betasIV <- betasI
+  ###############################
   
   for (i in 1:numrep) {
     cat("Iteration", i, "\n")
     x <- replicate(p, rnorm(n))
-    eps <- rlogis(n, scale = 2)
-  
+    eps <- rlogis(n, scale = 1)
+    
     ## find c - binary search 
     c <- rep(NA, 4)
     yraw <- x%*%gamma + eps
-    c[1] <- find_c(yraw, 0.2)
-    cat("done 20% \n")
-    c[2] <- find_c(yraw, 0.1)
-    cat("done 10% \n")
-    c[3] <- find_c(yraw, 0.05)
-    cat("done 5% \n")
-    c[4] <- find_c(yraw, 0.01)
-    cat("done 1% \n")
-    
-    x1 <- replicate((p-1), runif(0.1*n,  min=(-1), max = 4))
-  
+    skip_to_next <- FALSE
+    tryCatch(c[1] <- find_c(yraw, 0.2),
+             error = function(e) { skip_to_next <<- TRUE})
+    tryCatch(c[2] <- find_c(yraw, 0.1),
+             error = function(e) { skip_to_next <<- TRUE})
+    tryCatch(c[3] <- find_c(yraw, 0.05),
+             error = function(e) { skip_to_next <<- TRUE})
+    tryCatch(c[4] <- find_c(yraw, 0.01),
+             error = function(e) { skip_to_next <<- TRUE})
+    if(skip_to_next) { next }    
+
     for (j in 1:length(c)) {
-      ### !!!! put c/2 for beta
-      caseIIpoints <- cbind(x1, apply(x1, 1, funy, const = c[j], case = 2.5, p = p) )
-      caseIIIpoints <- cbind(x1, apply(x1, 1, funy, const = c[j], case = 5, p = p) )
       y <- as.numeric(yraw>c[j])
-      cat("c = ", c[j], "\n")
-      cat("Outliers: ", sum(y)/length(y), "\n")
       
-      data <- data.frame(x,Y =y)
-      dataII <- data.frame(rbind(cbind(x, y), cbind(caseIIpoints, y =rep(0, nrow(caseIIpoints)))))
-      dataIII <- data.frame(rbind(cbind(x, y), cbind(caseIIIpoints, y =rep(0, nrow(caseIIIpoints)))))
-      names(data) <- c(paste0("X", 1:p), "Y")
+      repl.obs <- sample(which(y == 0), size = round(length(y)/10))
+      repl.obsIV <- repl.obs[1:round(length(repl.obs)/2)]
+      caseIIpoints <- cbind(x[repl.obs, -p], apply(as.matrix(x[repl.obs, -p]), 1, funy, const = c[j]/gamma[1], case = 5, p = p))
+      caseIVpoints <- cbind(x[repl.obsIV, -p], apply(as.matrix(x[repl.obsIV, -p]), 1, funy, const = c[j]/gamma[1], case = 5, p = p) )
+      yIII <- y
+      yIII[repl.obs] <- 1
+      yIV <- y
+      yIV[repl.obs[(round(length(repl.obs)/2)+1):length(repl.obs)]] <- 1
+      
+      dataI <- data.frame(x,Y =y)
+      dataII <- data.frame(rbind(cbind(x[-repl.obs, ], y[-repl.obs]), cbind(caseIIpoints, y =rep(0, nrow(caseIIpoints)))))
+      dataIII <- data.frame(x,Y =yIII)
+      dataIV <- data.frame(rbind(cbind(x[-repl.obsIV, ], yIV[-repl.obsIV]), cbind(caseIVpoints, y =rep(0, nrow(caseIVpoints)))))
+      
+      names(dataI) <- c(paste0("X", 1:p), "Y")
       names(dataII) <- c(paste0("X", 1:p), "Y")
       names(dataIII) <- c(paste0("X", 1:p), "Y")
+      names(dataIV) <- c(paste0("X", 1:p), "Y")
       
-      missclasified <- sample(which(y == 0), size = round(length(y)/10))
-      y[missclasified] <- 1
-      dataMiss <- data.frame(x,Y =y)
-      names(dataMiss) <- c(paste0("X", 1:p), "Y")
-      
-      caseI[i, ((j-1)*6+1):((j-1)*6+6)] <- calculate_estimators(data, outmethod)
-      caseII[i, ((j-1)*6+1):((j-1)*6+6)] <- calculate_estimators(dataII, outmethod)
-      caseIII[i, ((j-1)*6+1):((j-1)*6+6)] <- calculate_estimators(dataIII, outmethod)
-      caseMiss[i, ((j-1)*6+1):((j-1)*6+6)] <- calculate_estimators(dataMiss, outmethod)
+      betasI[((i-1)*(p+1)+1):((p+1)*i), ((j-1)*8+1):(8*j)] <- calculate_estimators(dataI)
+      betasII[((i-1)*(p+1)+1):((p+1)*i), ((j-1)*8+1):(8*j)] <-  calculate_estimators(dataII)
+      betasIII[((i-1)*(p+1)+1):((p+1)*i), ((j-1)*8+1):(8*j)] <-  calculate_estimators(dataIII)
+      betasIV[((i-1)*(p+1)+1):((p+1)*i), ((j-1)*8+1):(8*j)] <- calculate_estimators(dataIV)
     }
   }
-
-  write.csv(caseI, paste0("SimulationResults/caseIp", p, outmethod, ".csv"), row.names = FALSE)  
-  write.csv(caseII, paste0("SimulationResults/caseIIp", p, outmethod, ".csv"), row.names = FALSE) 
-  write.csv(caseIII, paste0("SimulationResults/caseIIIp", p, outmethod,".csv"), row.names = FALSE) 
-  write.csv(caseMiss, paste0("SimulationResults/casep", p, outmethod, "miss.csv"), row.names = FALSE)  
+  write.csv(betasI, paste0("SimulationResults/betasIp", p, ".csv"), row.names = FALSE)
+  write.csv(betasII, paste0("SimulationResults/betasIIp", p,".csv"), row.names = FALSE)
+  write.csv(betasIII, paste0("SimulationResults/betasIIIp", p,".csv"), row.names = FALSE)
+  write.csv(betasIV, paste0("SimulationResults/betasIVp", p, ".csv"), row.names = FALSE)
 }
 
 
@@ -91,10 +89,8 @@ simulate_results <- function(p, gamma, outmethod = "mcd") {
 ## Simulation
 ################################################################################################################################
 
-simulate_results(2, c(2,2),outmethod = "mcd")
-simulate_results(2, c(2,2),outmethod = "pcout")
+simulate_results(2, c(2,2))
+simulate_results(2, c(2,2))
 
-## change the constant!! 
-simulate_results(10, rep(1, 10),outmethod = "mcd")
-simulate_results(10, rep(1, 10),outmethod = "pcout")
+
 

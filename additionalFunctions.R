@@ -31,119 +31,114 @@ funy <- function(x, const, case, p) {
 ## Additional functions - general
 ##########################################################################################################
 
-gini <- function(pred.prob, index, class, data, train=TRUE) {
+gini <- function(pred.prob, class, data) {
   ## train: indicates if the index vector is train or test
   
-  if (train) {
-    mydata <- data[-index,]
-  } else {
-    mydata <- data[index,]
-  }
-  
+  mydata <- data
   mydata$pred <- pred.prob 
-  roc <- roc(mydata[, class]~pred, data=mydata)
+  roc <- roc(mydata[, class]~pred, data=mydata, quiet = TRUE)
   gini <- 2*pROC::auc(roc) - 1
-  plot(roc)
+  #plot(roc)
   return(gini)
 }
 
-calculate_estimators <- function (data, outmethod) {
-  out <- rep(NA, 6)
+calculate_estimators <- function (data) {
+  betas <- matrix(NA, nrow = ncol(data), ncol = 8)
   
-  model <- glm(Y ~ ., data = data[get_train(data, "Y"), ], family=binomial)
-  pred <- predict(model, data[-get_train(data, "Y"), ], type = "response")
-  out[1] <- gini(pred, index = get_train(data, "Y"), class= "Y", data = data)
+  model <- glm(Y ~ ., data = data, family=binomial)
+  betas[, 1] <- model$coefficients
   
-  model <- glm(Y ~ ., data = data[get_train(data, "Y"), ], weights = get_weights(data, "Y")[get_train(data, "Y")], family=binomial)
-  pred <- predict(model, data[-get_train(data, "Y"), ], type = "response")
-  out[2] <- gini(pred, index = get_train(data, "Y"), class= "Y", data = data)
+  model <- glm(Y ~ ., data = data, weights = get_weights(data, "Y"), family=binomial)
+  betas[, 2] <- model$coefficients
   
-  model <- glmrobSP(Y ~ ., data = data[get_train(data, "Y"), ],
-                    family=binomial, method = "BY", trace.lev =FALSE, 
-                    weights = rep(1, length(get_train(data, "Y"))), outmethod = outmethod, 
+  model <- glmrobSP(Y ~ ., data = data,
+                    family=binomial, method = "BY", trace.lev =FALSE,
+                    weights = rep(1, nrow(data)), outmethod = "mcd",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
+  betas[, 3] <- model$coefficients
   
-  pred <- predict(model, data[-get_train(data, "Y"),], type = "link") #response not supported
-  pred <- exp(pred)/(1+exp(pred))
-  out[3] <- gini(pred, index = get_train(data, "Y"), class= "Y", data = data)
-  
-  model <- glmrobSP(Y ~ ., data = data[get_train(data, "Y"), ],
-                    family=binomial, method = "BY", trace.lev = FALSE, 
-                    weights = get_weights(data, "Y")[get_train(data, "Y")], outmethod = outmethod, 
+  model <- glmrobSP(Y ~ ., data = data,
+                    family=binomial, method = "BY", trace.lev = FALSE,
+                    weights = get_weights(data, "Y"), outmethod = "mcd",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
+  betas[, 4] <- model$coefficients
   
-  pred <- predict(model, data[-get_train(data, "Y"),], type = "link") #response not supported
-  pred <- exp(pred)/(1+exp(pred))
-  out[4] <- gini(pred, index = get_train(data, "Y"), class= "Y", data = data)
-
-  model <- glmrobSP(Y ~ ., data = data[get_train(data, "Y"), ],
-                    family=binomial, method = "WBY", trace.lev = FALSE, 
-                    weights = rep(1, length(get_train(data, "Y"))), outmethod = outmethod, 
+  model <- glmrobSP(Y ~ ., data = data,
+                    family=binomial, method = "WBY", trace.lev = FALSE,
+                    weights = rep(1, nrow(data)), outmethod = "mcd",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
+  betas[, 5] <- model$coefficients
   
-  pred <- predict(model, data[-get_train(data, "Y"),], type = "link") #response not supported
-  pred <- exp(pred)/(1+exp(pred))
-  out[5] <- gini(pred, index = get_train(data, "Y"), class= "Y", data = data)
-
-  model <- glmrobSP(Y ~ ., data = data[get_train(data, "Y"), ],
-                    family=binomial, method = "WBY", trace.lev = FALSE, 
-                    weights = get_weights(data, "Y")[get_train(data, "Y")], outmethod = outmethod, 
+  model <- glmrobSP(Y ~ ., data = data,
+                    family=binomial, method = "WBY", trace.lev = FALSE,
+                    weights = get_weights(data, "Y"), outmethod = "mcd",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
+  betas[, 6] <- model$coefficients
   
-  pred <- predict(model, data[-get_train(data, "Y"),], type = "link") #response not supported
-  pred <- exp(pred)/(1+exp(pred))
-  out[6] <- gini(pred, index = get_train(data, "Y"), class= "Y", data = data)
-  return(out)
+  model <- glmrobSP(Y ~ ., data = data,
+                    family=binomial, method = "WBY", trace.lev = FALSE,
+                    weights = rep(1, nrow(data)), outmethod = "pcdist",
+                    control = list(maxit = 300, const = 0.5, maxhalf = 10))
+  betas[, 7] <- model$coefficients
+  
+  model <- glmrobSP(Y ~ ., data = data,
+                    family=binomial, method = "WBY", trace.lev = FALSE,
+                    weights = get_weights(data, "Y"), outmethod = "pcdist",
+                    control = list(maxit = 300, const = 0.5, maxhalf = 10))
+  betas[, 8] <- model$coefficients
+  
+  return(betas)
 }
 
-calculate_estimatorsGMC <- function () {
-  out <- rep(NA, 5)
+
+calculate_estimatorsGMC <- function (data) {
+  out <- rep(NA, 6)
   
-  model <- glm(SeriousDlqin2yrs ~ ., data = givemecredit[get_train(givemecredit, "SeriousDlqin2yrs"), ], family=binomial)
-  pred <- predict(model, givemecredit[-get_train(givemecredit, "SeriousDlqin2yrs"), ], type = "response")
-  out[1] <- gini(pred, index = get_train(givemecredit, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = givemecredit)
-  
-  
-  model <- glm(SeriousDlqin2yrs ~ ., data = givemecredit[get_train(givemecredit, "SeriousDlqin2yrs"), ], weights = get_weights(givemecredit, "SeriousDlqin2yrs")[get_train(givemecredit, "SeriousDlqin2yrs")] , family=binomial)
-  pred <- predict(model, givemecredit[-get_train(givemecredit, "SeriousDlqin2yrs"), ], type = "response")
-  out[2] <- gini(pred, index = get_train(givemecredit, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = givemecredit)
+  model <- glm(SeriousDlqin2yrs ~ ., data = data[get_train(data, "SeriousDlqin2yrs"), ], family=binomial)
+  pred <- predict(model, data[-get_train(data, "SeriousDlqin2yrs"), ], type = "response")
+  out[1] <- gini(pred, index = get_train(data, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = data)
   
   
-  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = givemecredit[get_train(givemecredit, "SeriousDlqin2yrs"), ],
+  model <- glm(SeriousDlqin2yrs ~ ., data = data[get_train(data, "SeriousDlqin2yrs"), ], weights = get_weights(data, "SeriousDlqin2yrs")[get_train(data, "SeriousDlqin2yrs")] , family=binomial)
+  pred <- predict(model, data[-get_train(data, "SeriousDlqin2yrs"), ], type = "response")
+  out[2] <- gini(pred, index = get_train(data, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = data)
+  
+  
+  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = data[get_train(data, "SeriousDlqin2yrs"), ],
                     family=binomial, method = "BY", trace.lev = FALSE, 
-                    weights = rep(1, length(get_train(givemecredit, "SeriousDlqin2yrs"))), outmethod = "pcout",
+                    weights = rep(1, length(get_train(data, "SeriousDlqin2yrs"))), outmethod = "pcout",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
   
-  pred <- predict(model, givemecredit[-get_train(givemecredit, "SeriousDlqin2yrs"),], type = "link") #response not supported
+  pred <- predict(model, data[-get_train(data, "SeriousDlqin2yrs"),], type = "link") #response not supported
   pred <- exp(pred)/(1+exp(pred))
-  out[3] <- gini(pred, index = get_train(givemecredit, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = givemecredit)
+  out[3] <- gini(pred, index = get_train(data, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = data)
   
-  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = givemecredit[get_train(givemecredit, "SeriousDlqin2yrs"), ],
+  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = data[get_train(data, "SeriousDlqin2yrs"), ],
                     family=binomial, method = "BY", trace.lev = FALSE, 
-                    weights =  get_weights(givemecredit, "SeriousDlqin2yrs")[get_train(givemecredit, "SeriousDlqin2yrs")], outmethod = "pcout",
+                    weights =  get_weights(data, "SeriousDlqin2yrs")[get_train(data, "SeriousDlqin2yrs")], outmethod = "pcout",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
   
-  pred <- predict(model, givemecredit[-get_train(givemecredit, "SeriousDlqin2yrs"),], type = "link") #response not supported
+  pred <- predict(model, data[-get_train(data, "SeriousDlqin2yrs"),], type = "link") #response not supported
   pred <- exp(pred)/(1+exp(pred))
-  out[4] <- gini(pred, index = get_train(givemecredit, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = givemecredit)
+  out[4] <- gini(pred, index = get_train(data, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = data)
   
-  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = givemecredit[get_train(givemecredit, "SeriousDlqin2yrs"), ],
+  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = data[get_train(data, "SeriousDlqin2yrs"), ],
                     family=binomial, method = "WBY", trace.lev = FALSE, 
-                    weights = rep(1, length(get_train(givemecredit, "SeriousDlqin2yrs"))), outmethod = "pcout",
+                    weights = rep(1, length(get_train(data, "SeriousDlqin2yrs"))), outmethod = "pcout",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
   
-  pred <- predict(model, givemecredit[-get_train(givemecredit, "SeriousDlqin2yrs"),], type = "link") #response not supported
+  pred <- predict(model, data[-get_train(data, "SeriousDlqin2yrs"),], type = "link") #response not supported
   pred <- exp(pred)/(1+exp(pred))
-  out[5] <- gini(pred, index = get_train(givemecredit, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = givemecredit)
+  out[5] <- gini(pred, index = get_train(data, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = data)
   
-  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = givemecredit[get_train(givemecredit, "SeriousDlqin2yrs"), ],
+  model <- glmrobSP(SeriousDlqin2yrs ~ ., data = data[get_train(data, "SeriousDlqin2yrs"), ],
                     family=binomial, method = "WBY", trace.lev = FALSE, 
-                    weights =  get_weights(givemecredit, "SeriousDlqin2yrs")[get_train(givemecredit, "SeriousDlqin2yrs")], outmethod = "pcout",
+                    weights =  get_weights(data, "SeriousDlqin2yrs")[get_train(data, "SeriousDlqin2yrs")], outmethod = "pcout",
                     control = list(maxit = 300, const = 0.5, maxhalf = 10))
   
-  pred <- predict(model, givemecredit[-get_train(givemecredit, "SeriousDlqin2yrs"),], type = "link") #response not supported
+  pred <- predict(model, data[-get_train(data, "SeriousDlqin2yrs"),], type = "link") #response not supported
   pred <- exp(pred)/(1+exp(pred))
-  out[6] <- gini(pred, index = get_train(givemecredit, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = givemecredit)
+  out[6] <- gini(pred, index = get_train(data, "SeriousDlqin2yrs"), class= "SeriousDlqin2yrs", data = data)
   return(out)
 }
 
