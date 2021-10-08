@@ -35,5 +35,8 @@ non-robust estimators and can be found in the *Evaluation* folder.
 	* giveMeCredit.R: the evaluation of the six classifiers based on the Gini index. 
 		Data can be found here: https://www.kaggle.com/c/GiveMeSomeCredit/data
 * additionalFunctions.R : Additional functions for the model evaluation and simulation settings 
-
+* Results_and_Explanatory_Analysis : 
+	* MT_SimulationResults.pdf: Tables of simulation results - the bias and MSE and the mean and 
+				   standard deviation of the Gini index evaluated on based on 500 simulation runs.
+	* MT_GiveMeCreditDescription.pdf: Description of the explanatory variables and their univariate distribution plots (original and log-transformed).
 
